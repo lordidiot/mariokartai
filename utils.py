@@ -46,16 +46,16 @@ pixfmt_to_mask_and_shift = {
     3: ((0xf800, 11), (0x07e0, 5), (0x001f, 0))
 }
 
-def frame_to_rgb(frame_data: FrameData, buffer: bytes) -> np.ndarray:
+def frame_to_rgb(frame_data: FrameData, buffer) -> np.ndarray:
     bytespp = pixfmt_to_bpp[frame_data.pixfmt] // 8
     mask_and_shift = pixfmt_to_mask_and_shift[frame_data.pixfmt]
     scale = pixfmt_to_scale[frame_data.pixfmt]
     w, h = frame_data.w + frame_data.x, frame_data.h + frame_data.y
     assert frame_data.nbytes == w * h * bytespp, "Invalid nbytes"
-    assert len(buffer) == frame_data.nbytes, "Invalid buffer size"
+    assert len(buffer) >= frame_data.nbytes, "Buffer size too small"
+    buffer = buffer[:frame_data.nbytes]
 
-    pixels = []
-    for i in range(0, frame_data.nbytes, bytespp):
-        val = int.from_bytes(buffer[i:i+bytespp], byteorder='little')
-        pixels.append(tuple(map(lambda x: (val & x[0]) >> x[1], mask_and_shift)))
-    return np.array(pixels).reshape((h, w, 3)) / np.array(scale)
+    vals = np.frombuffer(buffer, dtype=np.uint16).reshape(h, w)
+    pixels = np.stack(list((vals & mask) >> shift for mask, shift in mask_and_shift), axis=-1)
+    pixels = pixels / np.array(scale)
+    return pixels

@@ -1,7 +1,10 @@
 import socket
 import argparse
+from typing import Optional
 from utils import FrameData, frame_to_rgb
-from matplotlib import pyplot as plt
+from multiprocessing import shared_memory
+
+SHM_NAME_SIZE = 64
 
 def parse_arguments():
     # Parse command-line arguments
@@ -18,15 +21,23 @@ def create_socket(host: str, port: int):
     server_socket.bind(server_address)
     return server_socket
 
-def read_ints(client_socket: socket.socket, n: int) -> list:
+def read_ints(client_socket: socket.socket, n: int) -> Optional[list]:
     buf = client_socket.recv(n * 4)
+    if not buf:
+        return None
     return [int.from_bytes(buf[i:i+4], byteorder='little') for i in range(0, len(buf), 4)]
 
-def read_frame_data(client_socket: socket.socket) -> tuple[FrameData, bytes]:
-    frame_data = FrameData(*read_ints(client_socket, 6))
-    # buf = client_socket.recv(frame_data.nbytes)
-    # return frame_data, buf
-    return frame_data, b""
+def read_frame_data(client_socket: socket.socket) -> Optional[tuple[FrameData, bytes]]:
+    vals = read_ints(client_socket, 6)
+    if not vals:
+        return None
+    frame_data = FrameData(*vals)
+    return frame_data
+
+def setup_shm(client_socket: socket.socket) -> shared_memory.SharedMemory:
+    name = client_socket.recv(SHM_NAME_SIZE).rstrip(b'\0').decode()
+    name = name[1:] if name.startswith('/') else name
+    return shared_memory.SharedMemory(name)
 
 def start_server(server_socket: socket.socket, host, port):
     # Listen for incoming connections
@@ -38,10 +49,14 @@ def start_server(server_socket: socket.socket, host, port):
         client_socket, client_address = server_socket.accept()
         print('Connected to:', client_address)
         try:
+            shm = setup_shm(client_socket)
             while True:
-                frame_data, frame_buf = read_frame_data(client_socket)
-                # frame_rgb = frame_to_rgb(frame_data, frame_buf)
+                frame_data = read_frame_data(client_socket)
+                if not frame_data:
+                    break
+                frame_rgb = frame_to_rgb(frame_data, shm.buf)
         finally:
+            shm.close()
             client_socket.close()
 
 def main():
