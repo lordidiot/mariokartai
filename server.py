@@ -1,10 +1,13 @@
+import os
 import socket
 import argparse
+from time import time
 from typing import Optional
-from utils import FrameData, frame_to_rgb, Scancode, TIME_TRIAL_KEYS
+from utils import FrameData, frame_to_rgb, Scancode, TIME_TRIAL_KEYS, save_as_image, generate_random_string
 from multiprocessing import shared_memory
-from policy import State, Action
+from policy import State
 from policy.random import RandomPolicy
+from multiprocessing import Process
 
 SHM_NAME_SIZE = 64
 
@@ -49,14 +52,18 @@ def send_input(client_socket: socket.socket, keys: set[Scancode]) -> None:
     client_socket.sendall(buf)
 
 def handle_connection(client_socket: socket.socket) -> None:
-    policy = RandomPolicy(5000, TIME_TRIAL_KEYS, 0.1)
-    shm = setup_shm(client_socket)
+    data_dir = 'data/' + generate_random_string(5)
+    os.mkdir(data_dir)
     try:
+        policy = RandomPolicy(1000, TIME_TRIAL_KEYS, 0.4)
+        shm = setup_shm(client_socket)
         while True:
             frame_data = read_frame_data(client_socket)
             if not frame_data:
                 break
             frame_rgb = frame_to_rgb(frame_data, shm.buf)
+            filename = f'{data_dir}/{policy.t:05d}.png'
+            save_as_image(frame_rgb, filename)
             state = State(screen=frame_rgb)
             action = policy.get_action(state)
             if action is None:
@@ -64,18 +71,19 @@ def handle_connection(client_socket: socket.socket) -> None:
             send_input(client_socket, action.keys)
     finally:
         shm.close()
+        client_socket.shutdown(socket.SHUT_RDWR)
         client_socket.close()
 
 def start_server(server_socket: socket.socket, host: str, port: int) -> None:
     # Listen for incoming connections
-    server_socket.listen(1)
+    server_socket.listen(10)
     print(f'Server is listening on {host}:{port}...')
 
     while True:
         print('Waiting for a connection...')
         client_socket, client_address = server_socket.accept()
         print('Connected to:', client_address)
-        handle_connection(client_socket)
+        Process(target=handle_connection, args=(client_socket,)).start()
 
 def main() -> None:
     args = parse_arguments()

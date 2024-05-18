@@ -1,6 +1,10 @@
 import numpy as np
 from enum import Enum
 from dataclasses import dataclass
+from PIL import Image
+import random
+import string
+
 
 """
 enum jg_pixfmt {
@@ -60,6 +64,14 @@ def frame_to_rgb(frame_data: FrameData, buffer) -> np.ndarray:
     pixels = np.stack(list((vals & mask) >> shift for mask, shift in mask_and_shift), axis=-1)
     pixels = pixels / np.array(scale)
     return pixels
+
+def save_as_image(arr: np.ndarray, filename: str) -> None:
+    Image.fromarray((arr * 255).astype(np.uint8)).save(filename)
+
+def generate_random_string(length):
+    characters = string.ascii_letters + string.digits
+    random_string = ''.join(random.choice(characters) for _ in range(length))
+    return random_string
 
 class Scancode(Enum):
     SDL_SCANCODE_UNKNOWN = 0
